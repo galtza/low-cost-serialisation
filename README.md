@@ -194,25 +194,25 @@ The host application tracks details such as base address, path, and size of load
 
 For serialisation of polymorphic pointers, the **vftable** pointer is fetched, which instantly gives us the object size for the byte blob. 
 
-The C++ code snippet below demonstrates how to deduce the size of the data you're trying to serialise. Note that the function relies on a predefined map, `global_vftable_map`, to fetch sizes of polymorphic types.
+The C++ code snippet below demonstrates how to deduce the size of the data you're trying to serialise. Note that the function relies on a predefined map, `g_vt_map`, to fetch sizes of polymorphic types.
 
 ```cpp
-map<uintptr_t, pair<uint32_t, uint32_t>> g_vt_map;
+map<uintptr_t, pair<size_t, uint32_t>> g_vt_map; // vftable rva -> (type size, type index)
 
 template<typename T>
-auto get_size(const T& input) -> uint32_t {
+auto get_size_and_index(const T& _input, uintptr_t _base) -> pair<size_t, uint32_t> {
     if constexpr (!is_pointer_v<T>) {
-        return static_cast<uint32_t>(sizeof(T));
+        return {sizeof(T), 0xffffffff};
     } else {
         using U = remove_pointer_t<T>;
         if constexpr (!is_polymorphic_v<U>) {
-            return static_cast<uint32_t>(sizeof(U));
+            return {sizeof(U), 0xffffffff};
         } else {
-            auto vt_ptr = *reinterpret_cast<const uintptr_t*>(&input);
-            if (auto it = g_vt_map.find(vt_ptr); it != g_vt_map.end()) {
-                return it->second.first;
+            auto vt_rva = *reinterpret_cast<const uintptr_t*>(_input) - _base;
+            if (auto it = g_vt_map.find(vt_rva); it != g_vt_map.end()) {
+                return {it->second.first, it->second.second};
             } else {
-                return static_cast<uint32_t>(sizeof(U));
+                return {sizeof(U), 0xffffffff};
             }
         }
     }
